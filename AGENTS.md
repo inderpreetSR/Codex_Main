@@ -2,9 +2,11 @@
 
 ## Current state
 
-This repository contains a shared baseline only. No application stack, dependency
-manager, build system, or test suite is configured. Do not claim that application
-checks passed until meaningful checks exist and have run.
+This repository contains a shared baseline and Python quality/security CI for a
+website, machine learning, and data science project. No application framework,
+training pipeline, or application test suite is configured. Follow the check
+commands in `README.md`; do not claim that application checks passed until
+meaningful checks exist and have run.
 
 ## Working practices
 

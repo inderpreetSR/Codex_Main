@@ -16,4 +16,14 @@ Thumbs.db
 *.swo
 *~
 
-# Add stack-specific dependency and build exclusions when the stack is selected.
+# Python development and notebook caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
