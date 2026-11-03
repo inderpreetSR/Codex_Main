@@ -98,3 +98,37 @@ they are not implemented by generic linting. Keep large datasets and model
 artifacts in appropriate external storage, and use small non-sensitive fixtures
 in tests. JavaScript linting, browser tests, and accessibility checks can be added
 when the frontend stack is chosen.
+
+## Rust CI
+
+The [Rust quality workflow](https://github.com/inderpreetSR/Codex_Main/actions/workflows/rust-quality.yml)
+runs on pushes and pull requests to all four branches, manually, and weekly:
+
+- **rustfmt:** checks formatting.
+- **Clippy:** checks all workspace targets; warnings fail CI.
+- **Cargo build:** compiles all workspace targets.
+- **Cargo test:** runs workspace unit, integration, and documentation tests.
+- **cargo-audit:** fails on vulnerable dependencies reported by RustSec.
+
+Rust is pinned in `rust-toolchain.toml`; the auditor version is pinned in the
+workflow. Add a root `Cargo.toml` (a workspace for multiple crates) and commit
+`Cargo.lock` to activate these checks. Missing Cargo projects are explicitly
+skipped; nested crates without a root workspace fail with setup guidance. There
+is no Rust application yet, so CI does not validate Rust application behavior.
+
+With Rust installed through rustup, run these from the repository root:
+
+```sh
+rustup show
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo build --workspace --all-targets --locked
+cargo test --workspace --locked
+cargo install cargo-audit --version 0.22.2 --locked
+cargo audit --file Cargo.lock
+```
+
+The baseline uses default Cargo features. Add project-specific feature and
+platform matrices when code exists; enabling all features can be invalid for
+mutually exclusive options. A zero-test Cargo run does not validate application
+behavior. Configure Rust check requirements in branch rulesets once activated.

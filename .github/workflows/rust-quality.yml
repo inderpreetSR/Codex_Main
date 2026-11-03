@@ -1,0 +1,75 @@
+name: Rust quality
+
+on:
+  push:
+    branches: [main, dev, sit, uat]
+  pull_request:
+    branches: [main, dev, sit, uat]
+  workflow_dispatch:
+  schedule:
+    - cron: '45 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect Cargo project
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      present: ${{ steps.cargo.outputs.present }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Detect root Cargo manifest
+        id: cargo
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f Cargo.toml ]; then
+            test -f Cargo.lock || { echo 'Commit Cargo.lock for reproducible CI.'; exit 1; }
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          elif git ls-files | grep -E '(^|/)Cargo\.toml$' > /dev/null; then
+            echo 'Nested Rust crates need a root Cargo.toml workspace for this workflow.'
+            exit 1
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo 'SKIPPED: no Cargo project; Rust checks did not run.'
+          fi
+
+  checks:
+    name: Rust / ${{ matrix.check }}
+    needs: detect
+    if: needs.detect.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [format, clippy, build, tests, audit]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Activate pinned Rust toolchain
+        run: rustup show
+      - name: Check formatting
+        if: matrix.check == 'format'
+        run: cargo fmt --all -- --check
+      - name: Run Clippy; warnings fail CI
+        if: matrix.check == 'clippy'
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build workspace
+        if: matrix.check == 'build'
+        run: cargo build --workspace --all-targets --locked
+      - name: Run unit, integration, and documentation tests
+        if: matrix.check == 'tests'
+        run: cargo test --workspace --locked
+      - name: Install pinned dependency auditor
+        if: matrix.check == 'audit'
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Check dependencies against RustSec advisories
+        if: matrix.check == 'audit'
+        run: cargo audit --file Cargo.lock

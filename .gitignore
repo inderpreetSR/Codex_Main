@@ -27,3 +27,6 @@ venv/
 .ipynb_checkpoints/
 .coverage
 htmlcov/
+
+# Rust build outputs; commit Cargo.lock for reproducible CI.
+target/
