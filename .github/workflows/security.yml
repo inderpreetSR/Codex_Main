@@ -1,0 +1,63 @@
+name: Security
+
+on:
+  push:
+    branches: [main, dev, sit, uat]
+  pull_request:
+    branches: [main, dev, sit, uat]
+  workflow_dispatch:
+  schedule:
+    - cron: '30 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secret scan (Gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Gitleaks with SHA-256 verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.0/gitleaks_8.30.0_linux_x64.tar.gz
+          echo '79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e  gitleaks.tar.gz' | sha256sum --check --strict
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: Scan complete Git history for secrets
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --exit-code 1'
+
+  vulnerabilities:
+    name: Dependencies and configuration (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Trivy with SHA-256 verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output trivy.tar.gz \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz
+          echo 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0  trivy.tar.gz' | sha256sum --check --strict
+          tar -xzf trivy.tar.gz trivy
+      - name: Fail on high or critical vulnerabilities and misconfiguration
+        run: |
+          "$RUNNER_TEMP/trivy" fs \
+            --db-repository ghcr.io/aquasecurity/trivy-db:2 \
+            --checks-bundle-repository ghcr.io/aquasecurity/trivy-checks:2 \
+            --scanners vuln,misconfig \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 --no-progress .
