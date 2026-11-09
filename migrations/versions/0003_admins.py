@@ -1,5 +1,8 @@
 """Add locally managed administrator identities."""
 
+# Alembic installs the operation proxies while running migrations.
+# pylint: disable=no-member,invalid-name
+
 from alembic import op
 
 revision = "0003"

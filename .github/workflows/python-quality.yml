@@ -34,8 +34,11 @@ jobs:
           python -m pip install -r requirements-ci.txt
           if [ "${{ matrix.check }}" = pylint ]; then
             python -m pip install uv==0.13.7
-            uv export --locked --extra ai --extra worker --no-emit-project --no-hashes -o /tmp/codex-app-dependencies.txt
-            python -m pip install -r /tmp/codex-app-dependencies.txt
+            uv sync --locked --extra ai --extra worker
+            source .venv/bin/activate
+            python -m ensurepip
+            python -m pip install -r requirements-ci.txt
+            echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
           fi
           if [ -f requirements.txt ]; then
             python -m pip install -r requirements.txt
