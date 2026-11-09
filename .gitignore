@@ -28,5 +28,9 @@ venv/
 .coverage
 htmlcov/
 
+# Frontend build and dependency output
+node_modules/
+frontend/dist/
+
 # Rust build outputs; commit Cargo.lock for reproducible CI.
 target/

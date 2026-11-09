@@ -1,0 +1,130 @@
+name: codex-main
+
+x-runtime: &runtime
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:mode=1777,size=32m"]
+
+x-db-env: &db-env
+  DB_HOST: db
+  DB_PASSWORD: ${CODEX_DB_PASSWORD:?Run scripts/setup-local.ps1}
+
+services:
+  website:
+    <<: *runtime
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  db:
+    image: pgvector/pgvector:0.8.7-pg17-bookworm
+    environment:
+      POSTGRES_DB: codex
+      POSTGRES_PASSWORD: ${CODEX_DB_ADMIN_PASSWORD:?Run scripts/setup-local.ps1}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d codex"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *runtime
+    image: codex-main-api
+    command: [".venv/bin/alembic", "upgrade", "head"]
+    environment:
+      DB_HOST: db
+      DB_USER: postgres
+      DB_PASSWORD: ${CODEX_DB_ADMIN_PASSWORD:?Run scripts/setup-local.ps1}
+      RUNTIME_DB_PASSWORD: ${CODEX_DB_PASSWORD:?Run scripts/setup-local.ps1}
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *runtime
+    image: codex-main-api
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: api
+    environment:
+      <<: *db-env
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - uploads:/data/uploads
+    networks: [default, data]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  worker:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: worker
+    environment: *db-env
+    volumes:
+      - uploads:/data/uploads:ro
+    networks: [data]
+    cpus: 2
+    mem_limit: 2g
+    init: true
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  ai:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: ai
+    environment:
+      <<: *db-env
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_FAST_MODEL: ${OPENROUTER_FAST_MODEL:-openai/gpt-5-mini}
+      OPENROUTER_PLAN_MODEL: ${OPENROUTER_PLAN_MODEL:-anthropic/claude-haiku-4.5}
+      LANGSMITH_TRACING: "false"
+      LANGCHAIN_TRACING_V2: "false"
+    networks: [default, data]
+    init: true
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  verify:
+    <<: *runtime
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: verify
+    environment: *db-env
+    volumes:
+      - uploads:/data/uploads
+    networks: [data]
+
+networks:
+  data:
+    internal: true
+
+volumes:
+  postgres:
+  uploads:
