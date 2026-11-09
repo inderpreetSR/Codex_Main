@@ -27,10 +27,19 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install CI and application dependencies
+        if: matrix.check != 'tests'
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -r requirements-ci.txt
+          if [ "${{ matrix.check }}" = pylint ]; then
+            python -m pip install uv==0.13.7
+            uv sync --locked --extra ai --extra worker
+            source .venv/bin/activate
+            python -m ensurepip
+            python -m pip install -r requirements-ci.txt
+            echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          fi
           if [ -f requirements.txt ]; then
             python -m pip install -r requirements.txt
           fi
@@ -39,4 +48,17 @@ jobs:
           fi
           python -m pip check
       - name: Run ${{ matrix.check }}
+        if: matrix.check != 'tests'
         run: python .github/scripts/python_checks.py '${{ matrix.check }}'
+      - name: Run workspace integration tests
+        if: matrix.check == 'tests'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CODEX_DB_ADMIN_PASSWORD="$(openssl rand -hex 32)"
+          export CODEX_DB_PASSWORD="$(openssl rand -hex 32)"
+          trap 'docker compose -p codex-main-ci down --volumes' EXIT
+          docker compose -p codex-main-ci build website api verify
+          docker compose -p codex-main-ci up -d --wait db
+          docker compose -p codex-main-ci run --rm --no-deps migrate
+          docker compose -p codex-main-ci run --rm --no-deps verify

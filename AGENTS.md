@@ -2,11 +2,10 @@
 
 ## Current state
 
-This repository contains a shared baseline and Python/Rust quality/security CI for a
-website, machine learning, and data science project. No application framework,
-training pipeline, or application test suite is configured. Follow the check
-commands in `README.md`; do not claim that application checks passed until
-meaningful checks exist and have run.
+This repository contains a React and FastAPI data science workspace with a
+restricted ML and retrieval worker, plus Python/Rust quality and security CI.
+Follow the check commands in `README.md` and report checks that could only be
+exercised with fixtures or mocks.
 
 ## Working practices
 
