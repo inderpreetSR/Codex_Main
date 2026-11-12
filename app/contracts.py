@@ -9,6 +9,54 @@ Title = Annotated[str, Field(min_length=1, max_length=160)]
 ColumnName = Annotated[str, Field(min_length=1, max_length=120)]
 Paragraph = Annotated[str, Field(max_length=4000)]
 Task = Literal["classification", "regression"]
+ImprovementArea = Literal[
+    "Sales and conversion",
+    "Network and bandwidth",
+    "Operations and turnaround time",
+    "Cost and resource use",
+    "Quality and reliability",
+    "Customer experience",
+    "Other",
+]
+DecisionType = Annotated[str, Field(min_length=1, max_length=100)]
+DECISIONS_BY_AREA: dict[ImprovementArea, tuple[str, ...]] = {
+    "Sales and conversion": (
+        "Prioritize leads for follow-up",
+        "Choose when to follow up with a lead",
+        "Estimate which opportunities will close",
+        "Recommend an offer or discount",
+        "Forecast sales for the next period",
+    ),
+    "Network and bandwidth": (
+        "Forecast peak bandwidth demand",
+        "Allocate bandwidth across teams or services",
+        "Schedule large transfers outside peak hours",
+        "Flag congestion for investigation",
+    ),
+    "Operations and turnaround time": (
+        "Prioritize the work queue",
+        "Route cases to manual review",
+        "Schedule staff for expected demand",
+        "Flag cases likely to miss a deadline",
+    ),
+    "Cost and resource use": (
+        "Allocate staff or equipment",
+        "Forecast operating costs",
+        "Flag unusually high spending",
+        "Adjust inventory or purchasing levels",
+    ),
+    "Quality and reliability": (
+        "Flag defects for inspection",
+        "Schedule preventive maintenance",
+        "Prioritize incidents for investigation",
+    ),
+    "Customer experience": (
+        "Prioritize support requests",
+        "Route requests to the right team",
+        "Identify customers who may need outreach",
+    ),
+    "Other": (),
+}
 OFFLINE_JOBS = ("profile", "preview", "baseline", "index", "retrieve")
 AI_JOBS = ("plan", "features", "answer")
 
@@ -23,10 +71,50 @@ class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SpellingChange(Contract):
+    """A spelling correction accepted by the project owner."""
+
+    field: Literal[
+        "objective",
+        "current_process",
+        "decision",
+        "success_metric",
+        "current_baseline",
+        "target_outcome",
+        "constraints",
+        "data_size",
+        "results_timing",
+        "evaluation",
+        "explanation",
+        "steps",
+    ]
+    original: Annotated[str, Field(min_length=1, max_length=48, pattern=r"^[A-Za-z]+$")]
+    corrected: Annotated[
+        str, Field(min_length=1, max_length=48, pattern=r"^[A-Za-z]+$")
+    ]
+
+
+class SpellingInput(Contract):
+    """Text to check locally for possible English spelling mistakes."""
+
+    text: Paragraph
+
+
 class Plan(Contract):
     """Editable project plan."""
 
     objective: Paragraph = ""
+    spelling_changes: list[SpellingChange] = Field(default_factory=list, max_length=100)
+    improvement_area: ImprovementArea | None = None
+    current_process: Paragraph = ""
+    decision_type: DecisionType | None = None
+    decision: Paragraph = ""
+    success_metric: Paragraph = ""
+    current_baseline: Paragraph = ""
+    target_outcome: Paragraph = ""
+    constraints: Paragraph = ""
+    data_size: Paragraph = ""
+    results_timing: Paragraph = ""
     explanation: Paragraph = ""
     steps: list[Paragraph] = Field(default_factory=list, max_length=12)
     evaluation: Paragraph = ""

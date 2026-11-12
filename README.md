@@ -28,6 +28,13 @@ signing. Set the SPA's allowed callback URL, logout URL, and web origin to
 `AUTH0_CLIENT_ID`, and `AUTH0_AUDIENCE` (the API identifier) in `.env`.
 The public use-case library is available before Auth0 setup.
 
+**Browser security policy.** The website sends an enforced Content Security
+Policy. Scripts and styles load from the website; browser connections to the
+local API and the configured Auth0 hostname are allowed. Embedding the website
+in another site is blocked. The website container reads `AUTH0_DOMAIN` at
+startup, so recreate it after changing that setting. Configure and test a
+separate policy for any future production origins and deployment architecture.
+
 **Workspace sessions.** Auth0 validates sign-in; the API additionally requires a
 random, per-tab workspace session credential. Only its SHA-256 digest is stored
 in PostgreSQL. Sessions expire after 30 minutes without API activity or 12 hours
@@ -51,7 +58,7 @@ production use.
 **Local administrators.** The administrator overview displays aggregate project,
 active-session, session-event and job counts. It lists up to 100 recent accounts,
 active sessions and audit events, and can end an individual workspace session.
-It does not expose project contents or manage Auth0 accounts. The backend verifies the role on
+The read-only PostgreSQL overview shows allowlisted application tables, column types, estimated row counts, storage sizes, and aggregate job and upload statuses. Estimates can be stale. It does not show table records, run SQL, expose project contents, or manage Auth0 accounts. The backend verifies the role on
 every administrative API request. Administrators are identified by the exact
 Auth0 issuer and user ID (`sub`), not by an email address supplied by a client.
 
@@ -86,7 +93,12 @@ You can override the two model IDs in the same file. Models need a provider
 that supports structured outputs and the configured data restrictions.
 Run `docker --context desktop-linux compose up -d --wait` after changing
 settings. The upload and ML worker runs offline. Local document retrieval uses
-PostgreSQL and MiniLM embeddings. The outbound AI service receives only approved
+PostgreSQL and locally packaged EmbeddingGemma 2 embeddings (768 dimensions).
+The first worker build downloads the pinned model (about 1.5 GB); subsequent
+embedding runs offline. Existing document uploads are queued for re-indexing
+after the schema upgrade and are unavailable for retrieval while re-indexing.
+The existing similarity threshold needs evaluation against representative data.
+The outbound AI service receives only approved
 planning metadata or eligible excerpts and has no upload volume.
 
 ### Verify the workspace

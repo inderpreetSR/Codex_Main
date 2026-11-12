@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "build": "tsc --noEmit && vite build" },
+  "scripts": {
+    "build": "tsc --noEmit && vite build"
+  },
   "dependencies": {
     "@auth0/auth0-react": "^2.5.0",
+    "@radix-ui/react-tabs": "1.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

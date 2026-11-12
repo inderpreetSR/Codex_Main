@@ -14,6 +14,8 @@ services:
   website:
     <<: *runtime
     build: .
+    environment:
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-}
     ports:
       - "127.0.0.1:8080:8080"
 

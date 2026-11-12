@@ -6,11 +6,12 @@ COPY frontend/index.html frontend/tsconfig.json ./
 COPY frontend/src/ src/
 RUN npm run build
 
-FROM busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
-RUN mkdir -p /www/welcome
+FROM nginxinc/nginx-unprivileged:1.28-alpine@sha256:7377697a821c131a924a7105fafbe7414db4e9fcc77a6f08f776f33f141ec3f8
 COPY --from=frontend /src/dist/ /www/
-COPY --chmod=0644 public/index.html /www/welcome/index.html
-USER 65534:65534
+COPY public/ /www/welcome/
+COPY website/nginx.conf.template /etc/codex/nginx.conf.template
+COPY --chmod=0555 website/start.sh /usr/local/bin/codex-website
+USER 101:101
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=2s CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
-CMD ["httpd", "-f", "-p", "8080", "-h", "/www"]
+ENTRYPOINT ["/usr/local/bin/codex-website"]

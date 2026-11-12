@@ -15,13 +15,15 @@ class PlanSuggestion(BaseModel):
     """Editable AI planning suggestions."""
 
     objective: str
+    current_process: str
+    decision: str
+    success_metric: str
+    current_baseline: str
+    target_outcome: str
+    constraints: str
     explanation: str
     steps: list[str]
     evaluation: str
-    strengths: str
-    weaknesses: str
-    opportunities: str
-    threats: str
 
 
 class FeatureSuggestion(BaseModel):
@@ -138,7 +140,19 @@ def generate(job):
         return answer(job)
     schema = PlanSuggestion if kind == "plan" else FeatureSuggestion
     instruction = (
-        "Create a concise, editable data science project plan. Cover evaluation and SWOT."
+        "Act as a research-minded data science advisor to a cross-functional team. "
+        "Develop an editable, scientifically rigorous plan in clear, accessible language. "
+        "Define the business objective, current process and actionable decision; distinguish "
+        "the operational outcome from any proposed prediction target. Specify a measurable "
+        "success criterion, baseline, target, constraints, evaluation and practical steps. "
+        "Identify assumptions and information gaps explicitly. Never invent observed values, "
+        "evidence, data availability, resource limits or an agreed target. Where information "
+        "is missing, state what must be confirmed and suggest how it could be measured. "
+        "Consider whether descriptive analysis, a dashboard, statistical evaluation or "
+        "predictive modelling is appropriate; treat ML feasibility as unverified until "
+        "relevant data is assessed. Distinguish association from causation and flag "
+        "prediction-time availability and potential data leakage when relevant. "
+        "Give concrete, proportionate recommendations without claiming certainty."
         if kind == "plan"
         else "Suggest prediction-time features and transformations. Explain leakage and suitability risks."
     )

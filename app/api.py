@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.auth import check_session, create_session, current_owner, verified_owner
 from app.contracts import (
+    DECISIONS_BY_AREA,
     Approval,
     Consent,
     DatasetJob,
@@ -30,6 +31,7 @@ from app.contracts import (
     ProjectInput,
     ProjectOutput,
     Question,
+    SpellingInput,
     UploadJob,
     UploadOutput,
 )
@@ -108,6 +110,69 @@ def admin_overview(_admin: Annotated[str, Depends(require_admin)]):
             (SELECT count(*) FROM session_events WHERE created_at >= now() - interval '24 hours') AS session_events_24h,
             (SELECT count(*) FROM jobs WHERE status IN ('queued', 'running')) AS active_jobs""",
         )
+
+
+# Only workspace-owned tables are exposed through the admin metadata view.
+ADMIN_TABLES = {
+    "projects": "Project plans and feature specifications",
+    "uploads": "Uploaded file metadata and processing status",
+    "chunks": "Document passages and local embedding vectors",
+    "jobs": "Background tasks and their processing status",
+    "app_sessions": "Workspace session records",
+    "session_events": "Sign-in and sign-out activity",
+    "workspace_admins": "Administrator role assignments",
+    "admin_role_events": "Administrator role changes",
+    "admin_action_events": "Administrative actions",
+}
+
+
+@api.get("/admin/database")
+def admin_database(_admin: Annotated[str, Depends(require_admin)]):
+    """Return allowlisted schema metadata and aggregates, never table records."""
+    with engine.connect() as connection:
+        tables = all_rows(
+            connection,
+            """SELECT c.relname::text AS name,
+                pg_stat_get_live_tuples(c.oid) AS estimated_rows,
+                pg_total_relation_size(c.oid) AS size_bytes
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+                AND c.relname::text = ANY(:names)
+            ORDER BY c.relname""",
+            names=list(ADMIN_TABLES),
+        )
+        columns = all_rows(
+            connection,
+            """SELECT c.relname::text AS table_name, a.attname::text AS name,
+                pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+                NOT a.attnotnull AS nullable
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+                AND c.relname::text = ANY(:names)
+                AND a.attnum > 0 AND NOT a.attisdropped
+            ORDER BY c.relname, a.attnum""",
+            names=list(ADMIN_TABLES),
+        )
+        jobs = all_rows(
+            connection,
+            "SELECT status, count(*) AS count FROM jobs GROUP BY status ORDER BY status",
+        )
+        uploads = all_rows(
+            connection,
+            """SELECT kind, status, count(*) AS count FROM uploads
+            GROUP BY kind, status ORDER BY kind, status""",
+        )
+    for table in tables:
+        table["description"] = ADMIN_TABLES[table["name"]]
+        table["columns"] = [
+            {key: value for key, value in column.items() if key != "table_name"}
+            for column in columns
+            if column["table_name"] == table["name"]
+        ]
+    return {"tables": tables, "jobs": jobs, "uploads": uploads}
 
 
 @api.get("/admin/users")
@@ -323,18 +388,52 @@ def project_details(project_id: UUID, owner: Owner):
         return owned_project(connection, project_id, owner)
 
 
+@api.post("/projects/{project_id}/spelling")
+def check_plan_spelling(project_id: UUID, body: SpellingInput, owner: Owner):
+    """Suggest English spelling corrections without sending text off the machine."""
+    from app.spelling import suggestions  # pylint: disable=import-outside-toplevel
+
+    with engine.connect() as connection:
+        owned_project(connection, project_id, owner)
+    return {"suggestions": suggestions(body.text)}
+
+
 @api.put("/projects/{project_id}/plan", response_model=Plan)
 def save_plan(project_id: UUID, body: Plan, owner: Owner):
     """Save the current editable project plan."""
     with engine.begin() as connection:
-        owned_project(connection, project_id, owner, lock=True)
+        project = owned_project(connection, project_id, owner, lock=True)
+        plan = Plan.model_validate(
+            {**project["plan"], **body.model_dump(exclude_unset=True)}
+        )
+        if (
+            not plan.improvement_area
+            or not plan.objective.strip()
+            or not plan.current_process.strip()
+        ):
+            raise HTTPException(
+                422,
+                "Choose an improvement area and enter a business goal and current process.",
+            )
+        if plan.decision_type == "Other" and not plan.decision.strip():
+            raise HTTPException(422, "Describe the decision or action to improve.")
+        previous_plan = project["plan"]
+        same_saved_choice = plan.improvement_area == previous_plan.get(
+            "improvement_area"
+        ) and plan.decision_type == previous_plan.get("decision_type")
+        if (
+            plan.decision_type not in (None, "Other")
+            and not same_saved_choice
+            and plan.decision_type not in DECISIONS_BY_AREA[plan.improvement_area]
+        ):
+            raise HTTPException(422, "Choose a decision for this improvement area.")
         query(
             connection,
             "UPDATE projects SET plan = CAST(:value AS jsonb) WHERE id = :id",
             id=project_id,
-            value=body.model_dump_json(),
+            value=plan.model_dump_json(),
         )
-    return body
+    return plan
 
 
 @api.put("/projects/{project_id}/features", response_model=Features)
@@ -639,15 +738,40 @@ def export(project_id: UUID, kind: Literal["plan", "features"], owner: Owner):
     plan = Plan(**project["plan"])
     sections = [
         f"# {project['title']}",
-        f"## Objective\n{plan.objective}",
-        f"## Explanation\n{plan.explanation}",
-        "## Steps\n" + "\n".join(f"- {step}" for step in plan.steps),
-        f"## Evaluation\n{plan.evaluation}",
+        f"## Business goal\n{plan.objective}",
+        f"## Current process\n{plan.current_process}",
+        "## Decision or action to improve\n"
+        + (
+            plan.decision
+            if plan.decision_type in (None, "Other")
+            else plan.decision_type
+        ),
+        f"## Success metric\n{plan.success_metric}",
+        f"## Current baseline\n{plan.current_baseline}",
+        f"## Target and timeframe\n{plan.target_outcome}",
+        f"## Constraints\n{plan.constraints}",
+        f"## Rough amount of historical data\n{plan.data_size}",
+        f"## When results are needed\n{plan.results_timing}",
+        f"## Why this approach\n{plan.explanation}",
+        f"## How to evaluate\n{plan.evaluation}",
+        "## Next steps\n" + "\n".join(f"- {step}" for step in plan.steps),
     ]
+    if plan.improvement_area:
+        sections.insert(1, f"## Improvement area\n{plan.improvement_area}")
     sections.extend(
         f"## {name.title()}\n{getattr(plan, name)}"
         for name in ("strengths", "weaknesses", "opportunities", "threats")
+        if getattr(plan, name).strip()
     )
+    if plan.spelling_changes:
+        sections.append(
+            "## Accepted spelling corrections\n"
+            + "\n".join(
+                f"- {change.field.replace('_', ' ').title()}: "
+                f"~~{change.original}~~ {change.corrected}"
+                for change in plan.spelling_changes
+            )
+        )
     return Response(
         "\n\n".join(sections),
         media_type="text/markdown",

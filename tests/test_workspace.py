@@ -162,6 +162,33 @@ def test_admin_authorization_and_overview(api, monkeypatch):
     }
     assert client.get("/api/v1/admin/overview", headers=bob).status_code == 403
 
+    assert client.get("/api/v1/admin/database").status_code == 401
+    assert client.get("/api/v1/admin/database", headers=bob).status_code == 403
+    database = client.get("/api/v1/admin/database", headers=alice)
+    assert database.status_code == 200
+    report = database.json()
+    assert set(report) == {"tables", "jobs", "uploads"}
+    tables = {table["name"]: table for table in report["tables"]}
+    assert set(tables) == set(api_module.ADMIN_TABLES)
+    assert set(tables["projects"]) == {
+        "name",
+        "description",
+        "estimated_rows",
+        "size_bytes",
+        "columns",
+    }
+    assert {column["name"] for column in tables["projects"]["columns"]} >= {
+        "id",
+        "owner",
+        "title",
+        "plan",
+    }
+    assert all(
+        set(column) == {"name", "data_type", "nullable"}
+        for table in tables.values()
+        for column in table["columns"]
+    )
+
 
 def test_runtime_cannot_grant_admin():
     """The web/worker database role cannot assign itself administrator access."""
@@ -295,7 +322,91 @@ def test_auth_cors_and_manual_project(api):
     assert client.get(path + "/exports/features", headers=alice).json()["selected"] == [
         "tenure"
     ]
-    assert "## Strengths" in client.get(path + "/exports/plan", headers=alice).text
+    check = client.post(
+        path + "/spelling", headers=alice, json={"text": "Improve custmer retention."}
+    )
+    assert check.status_code == 200
+    assert any(
+        item["word"] == "custmer" and "customer" in item["candidates"]
+        for item in check.json()["suggestions"]
+    )
+    assert (
+        client.post(
+            path + "/spelling", headers=bob, json={"text": "custmer"}
+        ).status_code
+        == 404
+    )
+    punctuation = client.post(
+        path + "/spelling", headers=alice, json={"text": "😀 custmer."}
+    )
+    typo = punctuation.json()["suggestions"][0]
+    assert (typo["word"], typo["start"], typo["end"]) == ("custmer", 2, 9)
+    initial_export = client.get(path + "/exports/plan", headers=alice).text
+    assert "## Business goal" in initial_export
+    assert "## Strengths" not in initial_export
+
+    previous_note = {"strengths": "An intake checklist is already available."}
+    brief = {
+        "improvement_area": "Operations and turnaround time",
+        "objective": "Reduce intake delays.",
+        "current_process": "Review every submission manually.",
+        "decision_type": "Other",
+        "decision": "Route incomplete submissions to a reviewer.",
+        "success_metric": "Median review time in minutes.",
+        "current_baseline": "18 minutes.",
+        "target_outcome": "12 minutes in eight weeks.",
+        "constraints": "Keep missed escalations below the current rate.",
+        "data_size": "About 10,000 historical submissions.",
+        "results_timing": "A list each morning.",
+        "spelling_changes": [
+            {"field": "objective", "original": "custmer", "corrected": "customer"}
+        ],
+    }
+    assert client.put(path + "/plan", headers=bob, json=brief).status_code == 404
+    for invalid in (
+        {"improvement_area": None},
+        {"improvement_area": "Unknown area"},
+        {"objective": "   "},
+        {"current_process": "   "},
+        {"decision": ""},
+        {"decision_type": "Invalid decision"},
+        {"decision_type": "Prioritize leads for follow-up"},
+    ):
+        response = client.put(path + "/plan", headers=alice, json={**brief, **invalid})
+        assert response.status_code == 422
+    response = client.put(
+        path + "/plan", headers=alice, json={**brief, **previous_note}
+    )
+    assert response.status_code == 200
+    saved_plan = client.put(path + "/plan", headers=alice, json=brief)
+    assert saved_plan.status_code == 200, saved_plan.text
+    stored_plan = client.get(path, headers=alice).json()["plan"]
+    assert stored_plan == saved_plan.json()
+    assert all(stored_plan[key] == value for key, value in brief.items())
+    assert stored_plan["strengths"] == previous_note["strengths"]
+    exported_plan = client.get(path + "/exports/plan", headers=alice).text
+    assert "## Improvement area\n" + brief["improvement_area"] in exported_plan
+    assert "## Decision or action to improve\n" + brief["decision"] in exported_plan
+    assert "## Rough amount of historical data\n" + brief["data_size"] in exported_plan
+    assert "## When results are needed\n" + brief["results_timing"] in exported_plan
+    assert "~~custmer~~ customer" in exported_plan
+    assert "## Strengths\n" + previous_note["strengths"] in exported_plan
+
+    preset = client.put(
+        path + "/plan",
+        headers=alice,
+        json={
+            "improvement_area": "Sales and conversion",
+            "decision_type": "Prioritize leads for follow-up",
+            "decision": "",
+        },
+    )
+    assert preset.status_code == 200, preset.text
+    exported_plan = client.get(path + "/exports/plan", headers=alice).text
+    assert (
+        "## Decision or action to improve\nPrioritize leads for follow-up"
+        in exported_plan
+    )
 
 
 @pytest.mark.parametrize("task", ["classification", "regression"])
@@ -495,3 +606,57 @@ def test_rag_privacy_deletion_and_model_policy(api, monkeypatch):
         == "succeeded"
     )
     assert calls[-1][1] == summary["payload"]
+
+
+def test_ai_fallback_keeps_provider_controls(monkeypatch):
+    """Use the fallback only after failure and keep both provider policies identical."""
+    calls = []
+
+    class FakeProvider:
+        """Return a controlled result without making a network request."""
+
+        def __init__(self, **options):
+            self.options = options
+
+        def with_structured_output(self, schema, method):
+            assert schema is generation.FeatureSuggestion
+            assert method == "json_schema"
+
+            def generate(_messages):
+                calls.append(self.options)
+                if len(calls) == 1:
+                    raise RuntimeError("synthetic provider failure")
+                return schema(suggestions=["Review the prediction cutoff."])
+
+            return RunnableLambda(generate)
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fixture-only")
+    monkeypatch.setattr(generation, "ChatOpenRouter", FakeProvider)
+    result = generation.structured(
+        "features",
+        {"description": "Synthetic project"},
+        generation.FeatureSuggestion,
+        "Return a suggestion.",
+    )
+
+    assert result.suggestions == ["Review the prediction cutoff."]
+    assert len(calls) == 2
+    assert calls[0]["model"] != calls[1]["model"]
+    assert all(
+        call["openrouter_provider"]
+        == {"zdr": True, "data_collection": "deny", "require_parameters": True}
+        for call in calls
+    )
+
+
+def test_spelling_skips_identifiers_and_keeps_unicode_offsets():
+    """Suggest a typo without changing technical identifiers or URL fragments."""
+    from app.spelling import suggestions
+
+    text = "😀 custmer. Visit https://example.test/custmer and use custmer_id."
+    found = suggestions(text)
+
+    assert len(found) == 1
+    assert found[0]["word"] == "custmer"
+    assert text[found[0]["start"] : found[0]["end"]] == "custmer"
+    assert "customer" in found[0]["candidates"]

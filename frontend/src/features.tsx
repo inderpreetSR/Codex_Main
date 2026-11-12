@@ -1,3 +1,4 @@
+import { WorkspaceMark } from "./workspace-mark";
 import { useState } from "react";
 import { json, poll, type Column, type Features, type Profile, type Project, type Request, type Transform, type Upload } from "./api";
 import { SuggestionPanel, UploadPanel } from "./panels";
@@ -61,7 +62,7 @@ export function FeaturesPanel({ project, uploads, request, path, busy, run, save
     }, mode === "preview" ? "Building preview…" : "Fitting and evaluating baseline models…");
   }
 
-  return <article className="card stack"><h2>Feature Selector and Builder</h2>
+  return <article className="card stack"><h2 className="icon-heading"><WorkspaceMark kind="features" />Feature Selector and Builder</h2>
     <UploadPanel uploads={uploads} upload={upload} remove={remove} busy={busy} type="csv" />
     <label>Column source<select value={dataset?.id ?? "manual"} onChange={(event) => {
       setSelectedUpload(event.target.value); setPreview(null);
@@ -141,7 +142,7 @@ export function FeaturesPanel({ project, uploads, request, path, busy, run, save
         <summary>{name} one-hot preview</summary><p>Categories shown here come from the preview rows. Training learns categories from training data.</p>
         <pre>{JSON.stringify(encoding, null, 2)}</pre></details>)}
     </section>}
-    <div className="subpanel stack"><h3>Baseline model</h3>
+    <div className="subpanel stack"><h3 className="icon-heading"><WorkspaceMark kind="model" />Baseline model</h3>
       <label className="checkbox"><input type="checkbox" checked={independent}
         onChange={(event) => setIndependent(event.target.checked)} />Rows are independent. A random holdout is appropriate.</label>
       <button disabled={busy || !dataset || !independent || !spec.target} onClick={() => analyze("baseline")}>Run baseline comparison</button>
