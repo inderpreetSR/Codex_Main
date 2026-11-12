@@ -10,6 +10,7 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "pyjwt[crypto]>=2.10,<3",
   "python-multipart>=0.0.22,<1",
+  "pyspellchecker==0.9.1",
   "sqlalchemy>=2.0,<3",
   "uvicorn>=0.34,<1",
 ]
@@ -22,8 +23,10 @@ worker = [
   "pandas>=2.2,<4",
   "pypdf>=6,<7",
   "scikit-learn>=1.7,<2",
-  "sentence-transformers>=5,<6",
+  "sentence-transformers>=6.1,<7",
   "torch>=2.8,<3",
+  "torchvision>=0.29,<0.30",
+  "pillow>=11,<13",
 ]
 ai = ["langchain-openrouter>=0.1,<1"]
 test = ["pytest>=8,<10"]
@@ -34,6 +37,7 @@ environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

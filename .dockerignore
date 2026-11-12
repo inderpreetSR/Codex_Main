@@ -1,6 +1,9 @@
 **
 !public/
 !public/index.html
+!public/welcome.css
+!website/
+!website/**
 !frontend/
 !frontend/package.json
 !frontend/package-lock.json

@@ -16,7 +16,7 @@ from app.db import all_rows, engine, one, query
 from app.guides import GUIDES
 from app.retrieval_data import EMBEDDING_REVISION, VISIBLE
 
-MODEL_PATH = os.getenv("EMBEDDING_PATH", "/models/minilm")
+MODEL_PATH = os.getenv("EMBEDDING_PATH", "/models/gemma2")
 MAX_DOCUMENT_CHARS = 300_000
 MAX_CHUNKS = 800
 
@@ -26,8 +26,16 @@ def embedder():
     """Load the pinned offline model once per processing subprocess."""
     return HuggingFaceEmbeddings(
         model_name=MODEL_PATH,
-        model_kwargs={"device": "cpu", "local_files_only": True},
-        encode_kwargs={"normalize_embeddings": True},
+        model_kwargs={
+            "device": "cpu",
+            "local_files_only": True,
+            "config_kwargs": {"vision_config": None, "audio_config": None},
+        },
+        encode_kwargs={"normalize_embeddings": True, "batch_size": 2},
+        query_encode_kwargs={
+            "normalize_embeddings": True,
+            "prompt_name": "SearchQuery",
+        },
         show_progress=False,
     )
 
@@ -102,7 +110,12 @@ def index_source(connection, documents, upload_id=None):
         query(connection, "DELETE FROM chunks WHERE upload_id IS NULL")
     else:
         query(connection, "DELETE FROM chunks WHERE upload_id = :id", id=upload_id)
-    vectors = embedder().embed_documents([chunk.page_content for chunk in chunks])
+    vectors = embedder().embed_documents(
+        [
+            f"title: {chunk.metadata['source']} | text: {chunk.page_content}"
+            for chunk in chunks
+        ]
+    )
     for chunk, vector in zip(chunks, vectors, strict=True):
         query(
             connection,
@@ -188,11 +201,14 @@ def retrieve(job):
         ranked = all_rows(
             connection,
             """
-            SELECT c.id, c.upload_id, c.embedding <=> CAST(:vector AS vector) AS distance
+            SELECT c.id, c.upload_id,
+                CASE WHEN c.embedding_revision = :revision
+                    THEN c.embedding <=> CAST(:vector AS vector) END AS distance
         """
             + VISIBLE
             + """
-            AND c.embedding_revision = :revision AND c.embedding <=> CAST(:vector AS vector) <= 0.70
+            AND CASE WHEN c.embedding_revision = :revision
+                THEN c.embedding <=> CAST(:vector AS vector) <= 0.40 ELSE false END
             ORDER BY distance, c.id LIMIT 6
         """,
             project=job["project_id"],
@@ -205,8 +221,10 @@ def retrieve(job):
                 connection,
                 """
                 SELECT c.id FROM chunks c WHERE c.upload_id IS NULL AND c.embedding_revision = :revision
-                AND c.embedding <=> CAST(:vector AS vector) <= 0.70
-                ORDER BY c.embedding <=> CAST(:vector AS vector), c.id LIMIT 6
+                AND CASE WHEN c.embedding_revision = :revision
+                    THEN c.embedding <=> CAST(:vector AS vector) <= 0.40 ELSE false END
+                ORDER BY CASE WHEN c.embedding_revision = :revision
+                    THEN c.embedding <=> CAST(:vector AS vector) END, c.id LIMIT 6
             """,
                 vector=vector,
                 revision=EMBEDDING_REVISION,

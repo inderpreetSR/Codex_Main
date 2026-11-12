@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.db import all_rows
 
-EMBEDDING_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+EMBEDDING_REVISION = "f9972ac22e696a105c482202646979e33e4b5a1e"
 
 VISIBLE = """
     FROM chunks c LEFT JOIN uploads u ON u.id = c.upload_id

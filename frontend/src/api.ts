@@ -2,9 +2,78 @@ export const apiBase = "http://127.0.0.1:8000/api/v1";
 
 export type Task = "classification" | "regression";
 export type Guide = { id: string; title: string; description: string; task: Task | null; sections: Record<string, string> };
+export const improvementAreas = [
+  "Sales and conversion",
+  "Network and bandwidth",
+  "Operations and turnaround time",
+  "Cost and resource use",
+  "Quality and reliability",
+  "Customer experience",
+  "Other",
+] as const;
+export type ImprovementArea = (typeof improvementAreas)[number];
+export const decisionsByArea: Record<ImprovementArea, readonly string[]> = {
+  "Sales and conversion": [
+    "Prioritize leads for follow-up",
+    "Choose when to follow up with a lead",
+    "Estimate which opportunities will close",
+    "Recommend an offer or discount",
+    "Forecast sales for the next period",
+  ],
+  "Network and bandwidth": [
+    "Forecast peak bandwidth demand",
+    "Allocate bandwidth across teams or services",
+    "Schedule large transfers outside peak hours",
+    "Flag congestion for investigation",
+  ],
+  "Operations and turnaround time": [
+    "Prioritize the work queue",
+    "Route cases to manual review",
+    "Schedule staff for expected demand",
+    "Flag cases likely to miss a deadline",
+  ],
+  "Cost and resource use": [
+    "Allocate staff or equipment",
+    "Forecast operating costs",
+    "Flag unusually high spending",
+    "Adjust inventory or purchasing levels",
+  ],
+  "Quality and reliability": [
+    "Flag defects for inspection",
+    "Schedule preventive maintenance",
+    "Prioritize incidents for investigation",
+  ],
+  "Customer experience": [
+    "Prioritize support requests",
+    "Route requests to the right team",
+    "Identify customers who may need outreach",
+  ],
+  "Other": [],
+};
+export type SpellingField = "objective" | "current_process" | "decision" | "success_metric"
+  | "current_baseline" | "target_outcome" | "constraints" | "data_size" | "results_timing"
+  | "evaluation" | "explanation" | "steps";
+export type SpellingChange = { field: SpellingField; original: string; corrected: string };
 export type Plan = {
-  objective: string; explanation: string; steps: string[]; evaluation: string;
-  strengths: string; weaknesses: string; opportunities: string; threats: string;
+  objective: string;
+  spelling_changes?: SpellingChange[];
+  improvement_area?: ImprovementArea | null;
+  current_process?: string;
+  decision_type?: string | null;
+  decision?: string;
+  success_metric?: string;
+  current_baseline?: string;
+  target_outcome?: string;
+  constraints?: string;
+  data_size?: string;
+  results_timing?: string;
+  explanation: string;
+  evaluation: string;
+  steps: string[];
+  strengths?: string;
+  weaknesses?: string;
+  opportunities?: string;
+  threats?: string;
 };
 export type Column = { name: string; kind: "numeric" | "categorical" };
 export type Transform = {

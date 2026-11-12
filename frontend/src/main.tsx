@@ -3,7 +3,9 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { get, json, type Config, type Guide, type Project, type Request, type Task } from "./api";
 import { Workspace } from "./workspace";
+import { LearningJourney } from "./learning";
 import { Admin } from "./admin";
+import { WorkspaceMark } from "./workspace-mark";
 import "./styles.css";
 
 const sessionCreations = new Map<string, Promise<string>>();
@@ -22,37 +24,65 @@ async function workspaceSession(token: string, sessionStorageKey: string): Promi
 }
 
 function Shell({ children, account }: { children: React.ReactNode; account?: React.ReactNode }) {
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try { return localStorage.getItem("codex-theme") === "dark" ? "dark" : "light"; }
+    catch { return "light"; }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("codex-theme", theme); } catch { /* Storage may be unavailable. */ }
+  }, [theme]);
   return <>
-    <header className="top"><a className="brand" href="/"><span className="mark">C</span> Codex Main</a>
-      <div className="top-right"><a href="/welcome/">Welcome page</a>{account}</div>
+    <a className="skip-link" href="#main-content">Skip to main content</a>
+    <header className="top"><div className="top-inner"><a className="brand" href="/" aria-label="Codex Main home">
+      <span className="mark"><WorkspaceMark kind="pipeline" /></span>
+      <span>codex<span className="brand-accent">.</span>main<small>DATA SCIENCE WORKSPACE</small></span></a>
+      <nav className="main-nav" aria-label="Main navigation">
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("codex-navigate", { detail: "home" }))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9.5 20v-6h5v6" /></svg>Home</button>
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("codex-navigate", { detail: "learn" }))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h4" /></svg>Use cases</button>
+        {account && <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("codex-navigate", { detail: "projects" }))}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z" /></svg>My projects</button>}
+      </nav>
+      <div className="top-right"><a className="header-link" href="/welcome/">Welcome page <span aria-hidden="true">↗</span></a><button className="quiet theme-toggle" type="button" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? "Dark mode" : "Light mode"}</button>{account}</div></div>
     </header>
-    <main>{children}</main>
-    <footer>Codex Main · Data Science &amp; ML Workspace</footer>
+    <main id="main-content">{children}</main>
+    <footer><span>codex<span className="brand-accent">.</span>main</span><span>Built for thoughtful analysis.</span></footer>
   </>;
 }
 
-function Library({ guides, create }: { guides: Guide[]; create?: (guide: Guide) => void }) {
+function Library({ guides, create, learn }: { guides: Guide[]; create?: (guide: Guide) => void; learn: (guide: Guide) => void }) {
   return <section aria-labelledby="library-title">
-    <div className="section-title"><span className="eyebrow">Explore</span><h2 id="library-title">Use-case library</h2></div>
-    <div className="cards">{guides.map((guide, index) => <article className="card" key={guide.id}>
-      <span className="eyebrow">0{index + 1} / {guide.task ?? "Guide"}</span>
-      <h3>{guide.title}</h3><p>{guide.description}</p>
-      <details><summary>Read guide</summary>{Object.entries(guide.sections).map(([title, content]) =>
-        <div key={title} className="guide-section"><strong>{title}</strong><p>{content}</p></div>)}</details>
-      {guide.task && create && <button className="quiet" onClick={() => create(guide)}>Start a project</button>}
+    <div className="section-heading"><div className="section-title"><span className="eyebrow">THE LIBRARY</span><h2 id="library-title" className="icon-heading"><WorkspaceMark kind="learning" />Explore use cases</h2><p>Start with a familiar problem, then make it your own.</p></div><span className="section-count">{guides.length} GUIDES</span></div>
+    <div className="cards guide-cards">{guides.map((guide, index) => <article className="card guide-card" key={guide.id}>
+      <div className="guide-meta"><span className="guide-icon" aria-hidden="true">{["↗", "◎", "▥", "∿", "◌"][index % 5]}</span><span className="guide-number">0{index + 1}</span></div>
+      <span className="guide-tag">{guide.task ?? "Guide"}</span><h3>{guide.title}</h3><p>{guide.description}</p>
+      <button className="quiet guide-start" type="button" onClick={() => learn(guide)}>Explore guide →</button>
+      {guide.task && create && <button className="quiet guide-start" onClick={() => create(guide)}>Start a project <span aria-hidden="true">↗</span></button>}
     </article>)}</div>
   </section>;
 }
 
 function Intro({ guides, action }: { guides: Guide[]; action: React.ReactNode }) {
+  const [learning, setLearning] = useState<Guide | null>(null);
+  useEffect(() => {
+    function navigate(event: Event) {
+      const destination = (event as CustomEvent<string>).detail;
+      setLearning(null);
+      requestAnimationFrame(() => document.getElementById(destination === "learn" ? "library-title" : "main-content")?.scrollIntoView());
+    }
+    window.addEventListener("codex-navigate", navigate);
+    return () => window.removeEventListener("codex-navigate", navigate);
+  }, []);
+  if (learning) return <LearningJourney key={learning.id} guide={learning} close={() => setLearning(null)} signIn={action} />;
+  const featured = guides.find((item) => item.id === "churn") ?? guides[0];
   return <>
     <section className="hero">
-      <span className="eyebrow">Local research workspace</span>
-      <h1>Data science projects</h1>
-      <p>Plan your analysis, design features, compare baseline models, and ask questions grounded in your project documents.</p>
-      {action}
+      <div className="hero-content"><span className="eyebrow"><span className="status-dot" aria-hidden="true"></span> YOUR DATA SCIENCE WORKSPACE</span>
+      <h1>Start with<br/><span>a question.</span></h1>
+      <p>Learn the concepts, explore a use case, and build thoughtful experiments at your own pace.</p>
+      <div className="hero-action actions">{featured && <button onClick={() => setLearning(featured)}>Explore {featured.title} →</button>}{action}</div></div>
+      <div className="hero-art" aria-hidden="true"><div className="art-orbit orbit-one"></div><div className="art-orbit orbit-two"></div><div className="art-core"><WorkspaceMark kind="pipeline" /></div><i className="art-dot dot-one"></i><i className="art-dot dot-two"></i><i className="art-dot dot-three"></i><div className="art-caption">EXPLORE <span>→</span> EXPERIMENT <span>→</span> UNDERSTAND</div></div>
     </section>
-    <Library guides={guides} />
+    <Library guides={guides} learn={setLearning} />
   </>;
 }
 
@@ -73,6 +103,7 @@ function SignedIn({ guides }: { guides: Guide[] }) {
     const [accessToken, session] = await credentials();
     return get(path, options, accessToken, session);
   }, [credentials]);
+  const [learning, setLearning] = useState<Guide | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [title, setTitle] = useState("");
@@ -93,10 +124,21 @@ function SignedIn({ guides }: { guides: Guide[] }) {
     return () => controller.abort();
   }, [request]);
 
+  useEffect(() => {
+    function navigate(event: Event) {
+      const destination = (event as CustomEvent<string>).detail;
+      if (project && !window.confirm("Leave this project? Unsaved changes may be lost.")) return;
+      setProject(null); setLearning(null); setAdminOpen(false);
+      requestAnimationFrame(() => document.getElementById(destination === "learn" ? "library-title" : "main-content")?.scrollIntoView());
+    }
+    window.addEventListener("codex-navigate", navigate);
+    return () => window.removeEventListener("codex-navigate", navigate);
+  }, [project]);
+
   function startFrom(item: Guide) {
     if (!item.task) return;
-    setTitle(item.title); setDescription(item.description); setTask(item.task); setGuide(item.id);
-    document.getElementById("project-title")?.focus();
+    setLearning(null); setTitle(item.title); setDescription(item.description); setTask(item.task); setGuide(item.id);
+    requestAnimationFrame(() => document.getElementById("project-title")?.focus());
   }
 
   async function create(event: React.FormEvent) {
@@ -133,12 +175,12 @@ function SignedIn({ guides }: { guides: Guide[] }) {
   return <Shell account={<>{isAdmin && !project && <button className="quiet" onClick={() => setAdminOpen(true)}>Admin</button>}
     <button className="quiet" onClick={() => void signOut()}>Sign out</button></>}>
     {error && <p className="message error" role="alert">{error}</p>}
-    {adminOpen ? <Admin request={request} close={() => setAdminOpen(false)} /> : project ? <Workspace key={project.id} project={project} update={update} request={request}
+    {adminOpen ? <Admin request={request} close={() => setAdminOpen(false)} /> : learning ? <LearningJourney key={learning.id} guide={learning} close={() => setLearning(null)} start={startFrom} /> : project ? <Workspace key={project.id} project={project} update={update} request={request}
       credentials={credentials} close={() => setProject(null)} /> : <>
-      <section className="dashboard"><div className="section-title"><span className="eyebrow">Workspace</span><h1>My projects</h1></div>
+      <section className="dashboard"><div className="dashboard-heading"><div className="section-title"><span className="eyebrow"><span className="status-dot" aria-hidden="true"></span> YOUR WORKSPACE</span><h1>My projects<span className="heading-period">.</span></h1><p>A little structure for your next big question.</p></div><span className="dashboard-count">{projects.length} {projects.length === 1 ? "PROJECT" : "PROJECTS"}</span></div>
         <div className="dashboard-grid">
-          <form className="card stack" onSubmit={create}>
-            <h2>New project</h2>
+          <form className="card stack create-card" onSubmit={create}>
+            <div className="panel-heading"><span className="panel-icon" aria-hidden="true">＋</span><div><h2>Start a new project</h2><p>Define the question you want to explore.</p></div></div>
             <label>Project name<input id="project-title" value={title} maxLength={160} required
               onChange={(event) => setTitle(event.target.value)} /></label>
             <label>Problem statement<textarea value={description} maxLength={4000}
@@ -148,13 +190,13 @@ function SignedIn({ guides }: { guides: Guide[] }) {
             </select></label>
             <button disabled={saving}>Create project</button>
           </form>
-          <div className="card stack"><h2>Saved projects</h2>{projects.length === 0 && <p>Your projects will appear here.</p>}
+          <div className="card stack saved-card"><div className="panel-heading"><span className="panel-icon alternate" aria-hidden="true">▦</span><div><h2>Saved projects</h2><p>Pick up where you left off.</p></div></div>{projects.length === 0 && <div className="empty-state"><span className="empty-symbol" aria-hidden="true">✳</span><strong>Nothing here just yet</strong><p>Your projects will appear here once you create one.</p></div>}
             {projects.map((item) => <button className="project-link" key={item.id} onClick={() => setProject(item)}>
               <strong>{item.title}</strong><span>{item.task}</span></button>)}
           </div>
         </div>
       </section>
-      <Library guides={guides} create={startFrom} />
+      <Library guides={guides} create={startFrom} learn={setLearning} />
     </>}
   </Shell>;
 }

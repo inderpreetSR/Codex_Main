@@ -23,7 +23,7 @@ CMD [".venv/bin/python", "-c", "from app.jobs import main; main()", "ai"]
 
 FROM base AS worker
 RUN uv sync --locked --no-dev --extra worker
-RUN HF_HUB_DISABLE_XET=1 .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('sentence-transformers/all-MiniLM-L6-v2', revision='1110a243fdf4706b3f48f1d95db1a4f5529b4d41', local_dir='/models/minilm', allow_patterns=['*.json', '1_Pooling/config.json', 'vocab.txt', 'model.safetensors', 'README.md'])"
+RUN HF_HUB_DISABLE_XET=1 .venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('google/embeddinggemma-2', revision='f9972ac22e696a105c482202646979e33e4b5a1e', local_dir='/models/gemma2', allow_patterns=['*.json', '*.jinja', '*.safetensors', '*.model', '*.txt', '1_Pooling/*', '2_Normalize/*'])"
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
 COPY app/ app/
 USER 10001:10001
